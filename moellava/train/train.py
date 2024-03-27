@@ -629,6 +629,8 @@ def preprocess_v1(
         total_len = int(target.ne(tokenizer.pad_token_id).sum())
         with open('debug_preprocess_v1.txt', 'a') as f:
             f.write(f'전체 토큰 길이: {total_len}\n')
+            f.write(f'sep: {sep}\n')
+            f.write(f'conv.sep2: {conv.sep2}\n\n')
 
         rounds = conversation.split(conv.sep2)
         with open('debug_preprocess_v1.txt', 'a') as f:
@@ -637,10 +639,17 @@ def preprocess_v1(
         cur_len = 1
         target[:cur_len] = IGNORE_INDEX
         for i, rou in enumerate(rounds):
+            with open('debug_preprocess_v1.txt', 'a') as f:
+                f.write(f'Round {i}:\n')
+                f.write(f'rou: {rou}\n')
+                
             if rou == "":
                 break
 
             parts = rou.split(sep)
+            with open('debug_preprocess_v1.txt', 'a') as f:
+                f.write(f'parts: {parts}\n')
+
             if len(parts) != 2:
                 break
             parts[0] += sep
@@ -652,9 +661,28 @@ def preprocess_v1(
                 round_len = len(tokenizer(rou).input_ids)
                 instruction_len = len(tokenizer(parts[0]).input_ids) - 2
 
+            with open('debug_preprocess_v1.txt', 'a') as f:
+                f.write(f'round_len: {round_len}\n')
+                f.write(f'instruction_len (before subtracting 2): {instruction_len + 2}\n')
+                f.write(f'instruction_len (after subtracting 2): {instruction_len}\n\n')
+
             target[cur_len : cur_len + instruction_len] = IGNORE_INDEX
             cur_len += round_len
+
+            with open('debug_preprocess_v1.txt', 'a') as f:
+                f.write(f'cur_len (after updating): {cur_len}\n\n')
+
         target[cur_len:] = IGNORE_INDEX
+
+        with open('debug_preprocess_v1.txt', 'a') as f:
+            f.write(f'마스킹 처리 후 cur_len: {cur_len}\n')
+            f.write(f'마스킹된 target:\n{target}\n\n')
+
+            # 마스킹된 토큰을 디코딩하여 출력 (IGNORE_INDEX 제외)
+            valid_tokens = target[target != IGNORE_INDEX]
+            masked_tokens = tokenizer.decode(valid_tokens)
+            f.write(f'마스킹된 토큰을 디코딩한 결과:\n')
+            f.write(str(masked_tokens) + '\n\n')
 
         if cur_len < tokenizer.model_max_length:
             if cur_len != total_len:
