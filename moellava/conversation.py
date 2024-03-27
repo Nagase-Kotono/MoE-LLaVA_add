@@ -309,6 +309,17 @@ conv_phi = Conversation(
     sep2="<|endoftext|>",
 )
 
+conv_phi_eeve = Conversation(
+    system="A chat between a curious user and an artificial intelligence assistant. "
+    "The assistant gives helpful, detailed, and polite answers to the user's questions.",
+    roles=("USER", "ASSISTANT"),
+    version="eeve",
+    messages=(),
+    offset=0,
+    sep_style=SeparatorStyle.TWO,
+    sep=" ",
+    sep2="<|im_end|>",
+)
 
 conv_stablelm = Conversation(
     system="A chat between a curious user and an artificial intelligence assistant. "
@@ -428,6 +439,7 @@ conv_templates = {
     "mistral": conv_mistral,
     "minicpm": conv_minicpm,
     "phi": conv_phi,
+    "eeve": conv_phi_eeve,
     "qwen": conv_phi,
     "stablelm": conv_stablelm,
     "vicuna_v1": conv_vicuna_v1,
