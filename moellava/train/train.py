@@ -602,41 +602,37 @@ def preprocess_eeve(
             truncation=True,
         ).input_ids
 
-    # print('after tokenizer_image_token input_ids targets', input_ids)
+    # print('after tokenizer_image_token', input_ids)
     targets = input_ids.clone()
 
     assert conv.sep_style == conversation_lib.SeparatorStyle.TWO
     # print(tokenizer)
     # Mask targets
     sep = conv.sep + conv.roles[1] + ": "
-    # print('sep', sep)
     for conversation, target in zip(conversations, targets):
         total_len = int(target.ne(tokenizer.pad_token_id).sum())
         # print('total_len', total_len)
         rounds = conversation.split(conv.sep2)
         # print('len(rounds)', len(rounds))
-        cur_len = 0
+        cur_len = 1
         target[:cur_len] = IGNORE_INDEX
         for i, rou in enumerate(rounds):
             if rou == "":
                 break
 
             parts = rou.split(sep)
-            # print('i rou, parts', i, rou, parts)
             if len(parts) != 2:
                 break
             parts[0] += sep
-            # print('after add sep, parts', parts)
 
             if has_image:
-                round_len = len(tokenizer_image_token(rou, tokenizer)) + 1  # for eos_token
-                instruction_len = len(tokenizer_image_token(parts[0], tokenizer)) - 1
+                round_len = len(tokenizer_image_token(rou, tokenizer))
+                instruction_len = len(tokenizer_image_token(parts[0], tokenizer)) - 2
             else:
-                round_len = len(tokenizer(rou).input_ids) + 1  # for eos_token
-                instruction_len = len(tokenizer(parts[0]).input_ids) - 1
-            # print('round_len, instruction_len, target[cur_len : cur_len + instruction_len]',
-            #       round_len, instruction_len, target[cur_len : cur_len + instruction_len], target[cur_len : cur_len + round_len])
-            target[cur_len : cur_len + instruction_len] = IGNORE_INDEX  # instruction_len is before the answer
+                round_len = len(tokenizer(rou).input_ids)
+                instruction_len = len(tokenizer(parts[0]).input_ids) - 2
+
+            target[cur_len : cur_len + instruction_len] = IGNORE_INDEX
 
             cur_len += round_len
         target[cur_len:] = IGNORE_INDEX
@@ -650,12 +646,12 @@ def preprocess_eeve(
                     f"WARNING: tokenization mismatch: {cur_len} vs. {total_len}."
                     f" (ignored)"
                 )
-    # print(input_ids, target)
+
     return dict(
         input_ids=input_ids,
         labels=targets,
     )
-
+    
 def preprocess_phi(
     sources,
     tokenizer: transformers.PreTrainedTokenizer,
