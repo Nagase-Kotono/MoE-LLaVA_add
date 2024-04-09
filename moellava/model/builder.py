@@ -12,7 +12,6 @@
 #    See the License for the specific language governing permissions and
 #    limitations under the License.
 
-
 import os
 import warnings
 import shutil
@@ -24,20 +23,29 @@ from moellava.model.language_model.llava_llama_moe import EvalMoELLaVALlamaForCa
 from moellava.model.language_model.llava_llama import LlavaLlamaForCausalLM
 
 import transformers
-a, b, c = transformers.__version__.split('.')[:3]
-if a == '4' and int(b) >= 34:
+
+#-모델 버전 확인---------------------------------------------------------------------------------------------------#
+major_version, minor_version, _ = transformers.__version__.split('.')[:3]
+
+# transformers 버전 4.34 이상인 경우
+if major_version == 4 and minor_version >= 34:
     from moellava.model.language_model.llava_mistral_moe import EvalMoELLaVAMistralForCausalLM
     from moellava.model.language_model.llava_mistral import LlavaMistralForCausalLM
-if a == '4' and int(b) >= 36:
+
+# transformers 버전 4.36 이상인 경우
+if major_version == 4 and minor_version >= 36:
     from moellava.model.language_model.llava_minicpm_moe import EvalMoELLaVAMiniCPMForCausalLM
     from moellava.model.language_model.llava_minicpm import LlavaMiniCPMForCausalLM
     from moellava.model.language_model.llava_phi_moe import EvalMoELLaVAPhiForCausalLM
     from moellava.model.language_model.llava_phi import LlavaPhiForCausalLM
     from moellava.model.language_model.llava_stablelm_moe import EvalMoELLaVAStablelmForCausalLM
     from moellava.model.language_model.llava_stablelm import LlavaStablelmForCausalLM
-if a == '4' and int(b) >= 37:
+
+# transformers 버전 4.37 이상인 경우
+if major_version == 4 and minor_version >= 37:
     from moellava.model.language_model.llava_qwen1_5_moe import EvalMoELLaVAQwen1_5ForCausalLM
     from moellava.model.language_model.llava_qwen1_5 import LlavaQwen1_5ForCausalLM
+#--------------------------------------------------------------------------------------------------------------------#
 
 from transformers import AutoTokenizer, AutoModelForCausalLM, AutoConfig, BitsAndBytesConfig, GenerationConfig
 import torch
@@ -46,28 +54,48 @@ from moellava.constants import DEFAULT_IMAGE_PATCH_TOKEN, DEFAULT_IM_START_TOKEN
     DEFAULT_VID_END_TOKEN, DEFAULT_VID_START_TOKEN, DEFAULT_VIDEO_PATCH_TOKEN
 from moellava.model.language_model.qwen.tokenization_qwen import QWenTokenizer
 
+def configure_model_loading_options(device, load_8bit, load_4bit, device_map, **kwargs):
+    """
+    모델 로딩에 필요한 설정을 구성합니다.
+    디바이스 유형, 양자화 옵션 등에 따라 적절한 설정을 적용합니다.
 
-def load_pretrained_model(model_path, model_base, model_name, load_8bit=False, load_4bit=False, device_map="auto",
-                          device="cuda", padding_side="right", merge=False, **kwargs):
-    kwargs = {"device_map": device_map, **kwargs}
-
-    if device != "cuda":
-        kwargs['device_map'] = {"": device}
-
+    Parameters:
+    - device: 사용할 디바이스 ('cuda', 'cpu')
+    - load_8bit: 8비트 양자화를 사용할지 여부
+    - load_4bit: 4비트 양자화를 사용할지 여부
+    - device_map: 모델을 로드할 디바이스 맵
+    - **kwargs: 추가 설정 매개변수
+    """
+    
+    # 기본 설정을 kwargs에 적용합니다.
+    kwargs['device_map'] = device_map if device == "cuda" else {"": device}
+    kwargs['torch_dtype'] = torch.float16
+    
+    # 양자화 설정 적용
     if load_8bit:
-        kwargs['load_in_8bit'] = True
+        kwargs.update({
+            'load_in_8bit': True,
+            # 필요한 경우 8비트 양자화에 특정 설정을 추가할 수 있습니다.
+        })
     elif load_4bit:
-        kwargs['load_in_4bit'] = True
-        kwargs['quantization_config'] = BitsAndBytesConfig(
-            load_in_4bit=True,
-            bnb_4bit_compute_dtype=torch.float16,
-            bnb_4bit_use_double_quant=True,
-            bnb_4bit_quant_type='nf4'
-        )
-    else:
-        kwargs['torch_dtype'] = torch.float16
+        kwargs.update({
+            'load_in_4bit': True,
+            'quantization_config': BitsAndBytesConfig(
+                load_in_4bit=True,
+                bnb_4bit_compute_dtype=torch.float16,
+                bnb_4bit_use_double_quant=True,
+                bnb_4bit_quant_type='nf4'
+            )
+        })
+
+    return kwargs
+        
+def load_pretrained_model(model_path, model_base, model_name, load_8bit=False, load_4bit=False, device_map="auto", device="cuda", padding_side="right", merge=False, **kwargs):
+
+    kwargs = configure_model_loading_options(device, load_8bit, load_4bit, device_map, **kwargs)
 
     if 'llava' in model_name.lower():
+        
         # Load LLaVA model
         if 'lora' in model_name.lower() and 'moe' not in model_name.lower() and model_base is None:
             warnings.warn('There is `lora` in model name but no `model_base` is provided. If you are loading a LoRA model, please provide the `model_base` argument. Detailed instruction: https://github.com/haotian-liu/LLaVA#launch-a-model-worker-lora-weights-unmerged.')
@@ -88,7 +116,7 @@ def load_pretrained_model(model_path, model_base, model_name, load_8bit=False, l
             elif 'qwen' in model_base.lower() and '1.5' in model_base.lower():
                 model = LlavaQwen1_5ForCausalLM.from_pretrained(model_base, low_cpu_mem_usage=True, config=lora_cfg_pretrained, **kwargs)
                 model.config.eos_token_id = tokenizer.eos_token_id
-            elif 'phi' in model_base.lower():
+            elif 'phi' in model_base.lower() or 'eeve' in model_base.lower():
                 model = LlavaPhiForCausalLM.from_pretrained(model_base, low_cpu_mem_usage=True, config=lora_cfg_pretrained, **kwargs)
                 model.config.eos_token_id = tokenizer.eos_token_id
             elif 'minicpm' in model_base.lower():
@@ -202,8 +230,8 @@ def load_pretrained_model(model_path, model_base, model_name, load_8bit=False, l
                     model = ds_engine.module
                 else:
                     model = LlavaMistralForCausalLM.from_pretrained(model_base, low_cpu_mem_usage=True, config=cfg_pretrained, **kwargs)
-            elif 'phi' in model_name.lower():
-                tokenizer = AutoTokenizer.from_pretrained(model_base, use_fast=False, padding_side=padding_side)
+            elif 'phi' in model_name.lower() or 'eeve' in model_base.lower():
+                tokenizer = AutoTokenizer.from_pretrained(model_base, use_fast=True, padding_side=padding_side)
                 cfg_pretrained = LlavaPhiConfig.from_pretrained(model_path)
                 if getattr(cfg_pretrained, 'moe', {}).get('moe_enable', False):
                     model = EvalMoELLaVAPhiForCausalLM.from_pretrained(model_base, low_cpu_mem_usage=True, config=cfg_pretrained, **kwargs)
@@ -361,8 +389,8 @@ def load_pretrained_model(model_path, model_base, model_name, load_8bit=False, l
                 else:
                     model = LlavaMistralForCausalLM.from_pretrained(model_path, low_cpu_mem_usage=True, **kwargs)
                 print(model)
-            elif 'phi' in model_name.lower():
-                tokenizer = AutoTokenizer.from_pretrained(model_path, use_fast=False, padding_side=padding_side)
+            elif 'phi' in model_name.lower() or 'eeve' in model_base.lower():
+                tokenizer = AutoTokenizer.from_pretrained(model_path, use_fast=True, padding_side=padding_side)
                 # print(tokenizer)
                 if 'moe' in model_name.lower():
                     assert not load_8bit and not load_4bit  # FIXME

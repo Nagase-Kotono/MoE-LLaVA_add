@@ -343,50 +343,110 @@ def _add_speaker_and_signal(header, source, get_conversation=True):
 
 
 
-def preprocess_multimodal(
-    sources: Sequence[str],
-    data_args: DataArguments
-) -> Dict:
-    is_multimodal = data_args.is_multimodal
-    if not is_multimodal:
+# def preprocess_multimodal(
+#     sources: Sequence[str],
+#     data_args: DataArguments
+# ) -> Dict:
+#     is_multimodal = data_args.is_multimodal
+#     if not is_multimodal:
+#         return sources
+
+#     for source in sources:
+#         for sentence in source:
+
+#             # ======================================================================================================
+#             if sentence['value'].startswith(DEFAULT_IMAGE_TOKEN) or sentence['value'].startswith(DEFAULT_VIDEO_TOKEN):  # run with multi-im, multi-vid, multi-im & multi-vid
+#                 # <video><video><image><image>\nxxxxxxxxxxxxx  # must <video> first
+#                 # <image>\nxxxxxxxxxxxxx -> <image>\nxxxxxxxxxxxxx
+#                 # <video>\nxxxxxxxxxxxxx -> <video>\nxxxxxxxxxxxxx
+
+#                 if "mmtag" in conversation_lib.default_conversation.version:
+#                     sentence['value'] = sentence['value'].replace(DEFAULT_IMAGE_TOKEN, '<Image>' + DEFAULT_IMAGE_TOKEN + '</Image>')
+
+#                 IMAGE_TOKEN_NUM = sentence['value'].count(DEFAULT_IMAGE_TOKEN)
+#                 if IMAGE_TOKEN_NUM > MAX_IMAGE_LENGTH:
+#                     sentence['value'] = sentence['value'].replace(DEFAULT_IMAGE_TOKEN * IMAGE_TOKEN_NUM, DEFAULT_IMAGE_TOKEN * MAX_IMAGE_LENGTH).strip()
+#                 VIDEO_TOKEN_NUM = sentence['value'].count(DEFAULT_VIDEO_TOKEN)
+#                 if VIDEO_TOKEN_NUM > MAX_VIDEO_LENGTH:
+#                     raise ValueError(f"{sentence['value']}")
+#                     sentence['value'] = sentence['value'].replace(DEFAULT_VIDEO_TOKEN * VIDEO_TOKEN_NUM, DEFAULT_VIDEO_TOKEN * MAX_VIDEO_LENGTH).strip()
+
+#             # a <video> is treated as `num_frames * <image>`
+#             replace_token, vid_replace_token = DEFAULT_IMAGE_TOKEN, DEFAULT_IMAGE_TOKEN * data_args.num_frames
+#             if data_args.mm_use_im_start_end:
+#                 replace_token = DEFAULT_IM_START_TOKEN + replace_token + DEFAULT_IM_END_TOKEN
+#                 vid_replace_token = DEFAULT_VID_START_TOKEN + vid_replace_token + DEFAULT_VID_END_TOKEN
+
+#             # <video><video><image><image>\nxxxxxxxxxxxxx -> `num_frames*<image>``num_frames*<image>`<image><image>\nxxxxxxxxxxxxx
+#             # <video>\nxxxxxxxxxxxxx -> `num_frames*<image>`\nxxxxxxxxxxxxx
+#             # print('before replace_token:', [sentence['value']])
+#             sentence["value"] = sentence["value"].replace(DEFAULT_IMAGE_TOKEN, replace_token)
+#             sentence['value'] = sentence['value'].replace(DEFAULT_VIDEO_TOKEN, vid_replace_token)
+#             # print('after replace_token:', [sentence['value']])
+#             # ======================================================================================================
+
+#     return sources
+
+def add_image_tags(value):
+    # 이미지 토큰 앞뒤로 <Image> 태그 추가
+    return value.replace(DEFAULT_IMAGE_TOKEN, '<Image>' + DEFAULT_IMAGE_TOKEN + '</Image>')
+
+def limit_image_tokens(value):
+    # 이미지 토큰 수가 최대 길이를 초과하는 경우 제한
+    image_token_num = value.count(DEFAULT_IMAGE_TOKEN)
+    if image_token_num > MAX_IMAGE_LENGTH:
+        value = value.replace(DEFAULT_IMAGE_TOKEN * image_token_num, DEFAULT_IMAGE_TOKEN * MAX_IMAGE_LENGTH).strip()
+    return value
+
+def limit_video_tokens(value):
+    # 비디오 토큰 수가 최대 길이를 초과하는 경우 오류 발생
+    video_token_num = value.count(DEFAULT_VIDEO_TOKEN)
+    if video_token_num > MAX_VIDEO_LENGTH:
+        raise ValueError(f"{value}")
+    return value
+
+def get_replace_tokens(data_args):
+    # 대체할 이미지 및 비디오 토큰 생성
+    replace_token, vid_replace_token = DEFAULT_IMAGE_TOKEN, DEFAULT_IMAGE_TOKEN * data_args.num_frames
+    if data_args.mm_use_im_start_end:
+        replace_token = DEFAULT_IM_START_TOKEN + replace_token + DEFAULT_IM_END_TOKEN
+        vid_replace_token = DEFAULT_VID_START_TOKEN + vid_replace_token + DEFAULT_VID_END_TOKEN
+    return replace_token, vid_replace_token
+
+def replace_image_token(value, replace_token):
+    # 이미지 토큰을 대체 토큰으로 교체
+    return value.replace(DEFAULT_IMAGE_TOKEN, replace_token)
+
+def replace_video_token(value, vid_replace_token):
+    # 비디오 토큰을 대체 토큰으로 교체
+    return value.replace(DEFAULT_VIDEO_TOKEN, vid_replace_token)
+
+def preprocess_multimodal(sources: Sequence[str], data_args: DataArguments) -> Dict:
+    # 멀티모달이 아닌 경우 입력을 그대로 반환
+    if not data_args.is_multimodal:
         return sources
 
     for source in sources:
         for sentence in source:
-
-            # ======================================================================================================
-            if sentence['value'].startswith(DEFAULT_IMAGE_TOKEN) or sentence['value'].startswith(DEFAULT_VIDEO_TOKEN):  # run with multi-im, multi-vid, multi-im & multi-vid
-                # <video><video><image><image>\nxxxxxxxxxxxxx  # must <video> first
-                # <image>\nxxxxxxxxxxxxx -> <image>\nxxxxxxxxxxxxx
-                # <video>\nxxxxxxxxxxxxx -> <video>\nxxxxxxxxxxxxx
-
+            # 이미지 또는 비디오 토큰으로 시작하는 경우에만 처리
+            if sentence['value'].startswith(DEFAULT_IMAGE_TOKEN) or sentence['value'].startswith(DEFAULT_VIDEO_TOKEN):
+                # "mmtag"가 대화 버전에 포함된 경우 이미지 태그 추가
                 if "mmtag" in conversation_lib.default_conversation.version:
-                    sentence['value'] = sentence['value'].replace(DEFAULT_IMAGE_TOKEN, '<Image>' + DEFAULT_IMAGE_TOKEN + '</Image>')
+                    sentence['value'] = add_image_tags(sentence['value'])
 
-                IMAGE_TOKEN_NUM = sentence['value'].count(DEFAULT_IMAGE_TOKEN)
-                if IMAGE_TOKEN_NUM > MAX_IMAGE_LENGTH:
-                    sentence['value'] = sentence['value'].replace(DEFAULT_IMAGE_TOKEN * IMAGE_TOKEN_NUM, DEFAULT_IMAGE_TOKEN * MAX_IMAGE_LENGTH).strip()
-                VIDEO_TOKEN_NUM = sentence['value'].count(DEFAULT_VIDEO_TOKEN)
-                if VIDEO_TOKEN_NUM > MAX_VIDEO_LENGTH:
-                    raise ValueError(f"{sentence['value']}")
-                    sentence['value'] = sentence['value'].replace(DEFAULT_VIDEO_TOKEN * VIDEO_TOKEN_NUM, DEFAULT_VIDEO_TOKEN * MAX_VIDEO_LENGTH).strip()
+                # 이미지 토큰 수를 제한
+                sentence['value'] = limit_image_tokens(sentence['value'])
+                # 비디오 토큰 수를 제한
+                sentence['value'] = limit_video_tokens(sentence['value'])
 
-            # a <video> is treated as `num_frames * <image>`
-            replace_token, vid_replace_token = DEFAULT_IMAGE_TOKEN, DEFAULT_IMAGE_TOKEN * data_args.num_frames
-            if data_args.mm_use_im_start_end:
-                replace_token = DEFAULT_IM_START_TOKEN + replace_token + DEFAULT_IM_END_TOKEN
-                vid_replace_token = DEFAULT_VID_START_TOKEN + vid_replace_token + DEFAULT_VID_END_TOKEN
-
-            # <video><video><image><image>\nxxxxxxxxxxxxx -> `num_frames*<image>``num_frames*<image>`<image><image>\nxxxxxxxxxxxxx
-            # <video>\nxxxxxxxxxxxxx -> `num_frames*<image>`\nxxxxxxxxxxxxx
-            # print('before replace_token:', [sentence['value']])
-            sentence["value"] = sentence["value"].replace(DEFAULT_IMAGE_TOKEN, replace_token)
-            sentence['value'] = sentence['value'].replace(DEFAULT_VIDEO_TOKEN, vid_replace_token)
-            # print('after replace_token:', [sentence['value']])
-            # ======================================================================================================
+                # 대체할 이미지 및 비디오 토큰 가져오기
+                replace_token, vid_replace_token = get_replace_tokens(data_args)
+                # 이미지 토큰 대체
+                sentence["value"] = replace_image_token(sentence["value"], replace_token)
+                # 비디오 토큰 대체
+                sentence['value'] = replace_video_token(sentence['value'], vid_replace_token)
 
     return sources
-
 
 def preprocess_llama_2(
     sources,
@@ -912,92 +972,157 @@ def preprocess_mpt(
     )
 
 
-def preprocess_plain(
-    sources: Sequence[str],
-    tokenizer: transformers.PreTrainedTokenizer,
-) -> Dict:
-    # add end signal and concatenate together
-    # print('sources', sources)
+def preprocess_plain(sources: Sequence[str], tokenizer: transformers.PreTrainedTokenizer) -> Dict:
+    """
+    Plain 스타일의 대화 데이터를 전처리하는 함수입니다. 프리트레인시 사용합니다.
+    1. 대화 데이터의 끝에 종료 신호를 추가하고 이어붙입니다.
+    2. 이어붙인 대화를 토크나이즈합니다.
+    3. 토크나이즈된 결과를 깊은 복사하여 타겟을 만듭니다.
+    4. 이미지 토큰에 해당하는 부분은 IGNORE_INDEX로 마스킹합니다.
+    """
     conversations = []
     for source in sources:
+        # 각 source는 두 개의 문장으로 구성되어야 합니다.
         assert len(source) == 2
+        # 첫 번째 문장에는 DEFAULT_IMAGE_TOKEN이 포함되어야 합니다.
         assert DEFAULT_IMAGE_TOKEN in source[0]['value']
-        source[0]['value'] = DEFAULT_IMAGE_TOKEN
+
+        # 이미지 토큰과 두 번째 문장을 이어붙이고 종료 신호를 추가합니다.
         conversation = source[0]['value'] + source[1]['value'] + conversation_lib.default_conversation.sep
         conversations.append(conversation)
-    # print('conversations', conversations)
-    # tokenize conversations
-    input_ids = [tokenizer_image_token(prompt, tokenizer, return_tensors='pt') for prompt in conversations]
-    # print('after tokenizer_image_token', input_ids)
-    targets = copy.deepcopy(input_ids)
-    for target, source in zip(targets, sources):
-        tokenized_len = len(tokenizer_image_token(source[0]['value'], tokenizer))
-        target[:tokenized_len] = IGNORE_INDEX
 
-    # print('target:', target)
+    # 대화를 토크나이즈합니다.
+    input_ids = [tokenizer_image_token(conversation, tokenizer, return_tensors='pt') for conversation in conversations]
+
+    # 토크나이즈된 결과를 깊은 복사하여 타겟을 만듭니다.
+    targets = copy.deepcopy(input_ids)
+
+    # 타겟에서 이미지 토큰에 해당하는 부분을 IGNORE_INDEX로 마스킹합니다.
+    for target, source in zip(targets, sources):
+        image_token_len = len(tokenizer_image_token(source[0]['value'], tokenizer))
+        target[:image_token_len] = IGNORE_INDEX
+
     return dict(input_ids=input_ids, labels=targets)
 
+# def preprocess(
+#     sources: Sequence[str],
+#     tokenizer: transformers.PreTrainedTokenizer,
+#     has_image: bool = False
+# ) -> Dict:
+#     """
+#     Given a list of sources, each is a conversation list. This transform:
+#     1. Add signal '### ' at the beginning each sentence, with end signal '\n';
+#     2. Concatenate conversations together;
+#     3. Tokenize the concatenated conversation;
+#     4. Make a deepcopy as the target. Mask human words with IGNORE_INDEX.
+#     """
+#     if conversation_lib.default_conversation.sep_style == conversation_lib.SeparatorStyle.PLAIN:
+#         return preprocess_plain(sources, tokenizer)
+#     if conversation_lib.default_conversation.sep_style == conversation_lib.SeparatorStyle.LLAMA_2:
+#         return preprocess_llama_2(sources, tokenizer, has_image=has_image)
+#     if conversation_lib.default_conversation.version.startswith("phi") or \
+#             conversation_lib.default_conversation.version.startswith("qwen"):  # for phi and qwen
+#         return preprocess_phi(sources, tokenizer, has_image=has_image)
+#     if conversation_lib.default_conversation.version.startswith("stablelm"):  # stablelm same as phi
+#         return preprocess_phi(sources, tokenizer, has_image=has_image)
+#     if conversation_lib.default_conversation.version.startswith("openchat") or \
+#         conversation_lib.default_conversation.version.startswith("mistral"):  # for openchat
+#         return preprocess_openchat(sources, tokenizer, has_image=has_image)
+#     if conversation_lib.default_conversation.version.startswith("minicpm"):  # minicpm same as openchat
+#         return preprocess_openchat(sources, tokenizer, has_image=has_image)
+#     if conversation_lib.default_conversation.version.startswith("v1"):
+#         return preprocess_v1(sources, tokenizer, has_image=has_image)
+#     if conversation_lib.default_conversation.version.startswith("eeve"):
+#         return preprocess_eeve(sources, tokenizer, has_image=has_image)
+#     if conversation_lib.default_conversation.version == "mpt":
+#         return preprocess_mpt(sources, tokenizer)
+#     # add end signal and concatenate together
+#     conversations = []
+#     for source in sources:
+#         header = f"{conversation_lib.default_conversation.system}\n\n"
+#         conversation = _add_speaker_and_signal(header, source)
+#         conversations.append(conversation)
+#     # tokenize conversations
+#     def get_tokenize_len(prompts):
+#         return [len(tokenizer_image_token(prompt, tokenizer)) for prompt in prompts]
 
-def preprocess(
-    sources: Sequence[str],
-    tokenizer: transformers.PreTrainedTokenizer,
-    has_image: bool = False
-) -> Dict:
+#     if has_image:
+#         input_ids = [tokenizer_image_token(prompt, tokenizer, return_tensors='pt') for prompt in conversations]
+#     else:
+#         conversations_tokenized = _tokenize_fn(conversations, tokenizer)
+#         input_ids = conversations_tokenized["input_ids"]
+
+#     targets = copy.deepcopy(input_ids)
+#     for target, source in zip(targets, sources):
+#         if has_image:
+#             tokenized_lens = get_tokenize_len([header] + [s["value"] for s in source])
+#         else:
+#             tokenized_lens = _tokenize_fn([header] + [s["value"] for s in source], tokenizer)["input_ids_lens"]
+#         speakers = [sentence["from"] for sentence in source]
+#         _mask_targets(target, tokenized_lens, speakers)
+
+#     return dict(input_ids=input_ids, labels=targets)
+
+def preprocess(sources: Sequence[str], tokenizer: transformers.PreTrainedTokenizer, has_image: bool = False) -> Dict:
     """
-    Given a list of sources, each is a conversation list. This transform:
-    1. Add signal '### ' at the beginning each sentence, with end signal '\n';
-    2. Concatenate conversations together;
-    3. Tokenize the concatenated conversation;
-    4. Make a deepcopy as the target. Mask human words with IGNORE_INDEX.
+    주어진 대화 데이터를 전처리하는 함수입니다.
+    1. 각 문장의 시작에 '### ' 신호를 추가하고, 끝에는 '\\n' 신호를 추가합니다.
+    2. 대화를 이어붙입니다.
+    3. 이어붙인 대화를 토크나이즈합니다.
+    4. 토크나이즈된 결과를 깊은 복사하여 타겟을 만듭니다.
+    5. 사람의 말은 IGNORE_INDEX로 마스킹합니다.
     """
+
+    # 대화 스타일에 따라 적절한 전처리 함수를 호출합니다.
     if conversation_lib.default_conversation.sep_style == conversation_lib.SeparatorStyle.PLAIN:
         return preprocess_plain(sources, tokenizer)
-    if conversation_lib.default_conversation.sep_style == conversation_lib.SeparatorStyle.LLAMA_2:
+    elif conversation_lib.default_conversation.sep_style == conversation_lib.SeparatorStyle.LLAMA_2:
         return preprocess_llama_2(sources, tokenizer, has_image=has_image)
-    if conversation_lib.default_conversation.version.startswith("phi") or \
-            conversation_lib.default_conversation.version.startswith("qwen"):  # for phi and qwen
+
+    # 모델 버전에 따라 적절한 전처리 함수를 호출합니다.
+    model_version = conversation_lib.default_conversation.version
+    if model_version.startswith("phi") or model_version.startswith("qwen") or model_version.startswith("stablelm"):
         return preprocess_phi(sources, tokenizer, has_image=has_image)
-    if conversation_lib.default_conversation.version.startswith("stablelm"):  # stablelm same as phi
-        return preprocess_phi(sources, tokenizer, has_image=has_image)
-    if conversation_lib.default_conversation.version.startswith("openchat") or \
-        conversation_lib.default_conversation.version.startswith("mistral"):  # for openchat
+    elif model_version.startswith("openchat") or model_version.startswith("mistral") or model_version.startswith("minicpm"):
         return preprocess_openchat(sources, tokenizer, has_image=has_image)
-    if conversation_lib.default_conversation.version.startswith("minicpm"):  # minicpm same as openchat
-        return preprocess_openchat(sources, tokenizer, has_image=has_image)
-    if conversation_lib.default_conversation.version.startswith("v1"):
+    elif model_version.startswith("v1"):
         return preprocess_v1(sources, tokenizer, has_image=has_image)
-    if conversation_lib.default_conversation.version.startswith("eeve"):
+    elif model_version.startswith("eeve"):
         return preprocess_eeve(sources, tokenizer, has_image=has_image)
-    if conversation_lib.default_conversation.version == "mpt":
+    elif model_version == "mpt":
         return preprocess_mpt(sources, tokenizer)
-    # add end signal and concatenate together
+
+    # 대화 데이터를 이어붙이고 신호를 추가합니다.
     conversations = []
     for source in sources:
         header = f"{conversation_lib.default_conversation.system}\n\n"
         conversation = _add_speaker_and_signal(header, source)
         conversations.append(conversation)
-    # tokenize conversations
-    def get_tokenize_len(prompts):
-        return [len(tokenizer_image_token(prompt, tokenizer)) for prompt in prompts]
 
+    # 이미지 토큰화 함수를 정의합니다.
+    def tokenizer_image_token(prompt, tokenizer):
+        return tokenizer(prompt, return_tensors='pt').input_ids[0]
+
+    # 대화를 토크나이즈합니다.
     if has_image:
-        input_ids = [tokenizer_image_token(prompt, tokenizer, return_tensors='pt') for prompt in conversations]
+        input_ids = [tokenizer_image_token(prompt, tokenizer) for prompt in conversations]
     else:
         conversations_tokenized = _tokenize_fn(conversations, tokenizer)
         input_ids = conversations_tokenized["input_ids"]
 
+    # 토크나이즈된 결과를 깊은 복사하여 타겟을 만듭니다.
     targets = copy.deepcopy(input_ids)
+
+    # 타겟에서 사람의 말을 IGNORE_INDEX로 마스킹합니다.
     for target, source in zip(targets, sources):
         if has_image:
-            tokenized_lens = get_tokenize_len([header] + [s["value"] for s in source])
+            tokenized_lens = [len(tokenizer_image_token(header + s["value"], tokenizer)) for s in source]
         else:
             tokenized_lens = _tokenize_fn([header] + [s["value"] for s in source], tokenizer)["input_ids_lens"]
         speakers = [sentence["from"] for sentence in source]
         _mask_targets(target, tokenized_lens, speakers)
 
     return dict(input_ids=input_ids, labels=targets)
-
-
 
 def expand2square(pil_img, background_color):
     width, height = pil_img.size
