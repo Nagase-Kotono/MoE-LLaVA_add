@@ -621,38 +621,33 @@ def preprocess_v1(
         labels=targets,
     )
     
-def preprocess_eeve(
-    sources,
-    tokenizer: transformers.PreTrainedTokenizer,
-    has_image: bool = False
-) -> Dict:
+def preprocess_eeve(sources, tokenizer: transformers.PreTrainedTokenizer, has_image: bool = False) -> Dict:
+    """
+    EEVE 모델의 대화 데이터를 전처리하는 함수입니다.
+    1. 대화 데이터에 프롬프트 템플릿을 적용합니다.
+    2. 대화를 토크나이즈합니다.
+    3. 토크나이즈된 결과를 복제하여 타겟을 만듭니다.
+    4. 타겟에서 instruction에 해당하는 부분을 IGNORE_INDEX로 마스킹합니다.
+    """
     conv = conversation_lib.default_conversation.copy()
     roles = {"human": conv.roles[0], "gpt": conv.roles[1]}
 
-    # print('00000000000', sources)
-    # Apply prompt templates
+    # 프롬프트 템플릿 적용
     conversations = []
-    # sys.exit()
-
-    # import ipdb
-    # ipdb.set_trace()
     for i, source in enumerate(sources):
         if roles[source[0]["from"]] != conv.roles[0]:
-            # Skip the first one if it is not from human
+            # 첫 번째 문장이 human의 발언이 아니면 건너뜁니다.
             source = source[1:]
-
         conv.messages = []
         for j, sentence in enumerate(source):
             role = roles[sentence["from"]]
             assert role == conv.roles[j % 2], f"{i}"
             conv.append_message(role, sentence["value"])
         conversations.append(conv.get_prompt())
-    # print(11111111, conversations)
-    # Tokenize conversations
-    # print('before tokenizer_image_token', conversations)
+
+    # 대화 토크나이즈
     if has_image:
         input_ids = torch.stack([tokenizer_image_token(prompt, tokenizer, return_tensors='pt') for prompt in conversations], dim=0)
-        # print(2222222222222, input_ids.shape)
     else:
         input_ids = tokenizer(
             conversations,
@@ -662,44 +657,33 @@ def preprocess_eeve(
             truncation=True,
         ).input_ids
 
-    # print('after tokenizer_image_token', input_ids)
     targets = input_ids.clone()
-
     assert conv.sep_style == conversation_lib.SeparatorStyle.TWO
-    # print(tokenizer)
-    # Mask targets
+
+    # 타겟 마스킹
     sep = conv.sep + conv.roles[1] + ": "
     for conversation, target in zip(conversations, targets):
         total_len = int(target.ne(tokenizer.pad_token_id).sum())
-        # print('total_len', total_len)
         rounds = conversation.split(conv.sep2)
-        # print('len(rounds)', len(rounds))
         cur_len = 1
         target[:cur_len] = IGNORE_INDEX
         for i, rou in enumerate(rounds):
             if rou == "":
                 break
-
             parts = rou.split(sep)
             if len(parts) != 2:
                 break
             parts[0] += sep
-
             if has_image:
                 round_len = len(tokenizer_image_token(rou, tokenizer))
                 instruction_len = len(tokenizer_image_token(parts[0], tokenizer)) - 2
             else:
                 round_len = len(tokenizer(rou).input_ids)
                 instruction_len = len(tokenizer(parts[0]).input_ids) - 2
-
             target[cur_len : cur_len + instruction_len] = IGNORE_INDEX
-
             cur_len += round_len
         target[cur_len:] = IGNORE_INDEX
-
         if cur_len < tokenizer.model_max_length:
-            # import ipdb
-            # ipdb.set_trace()
             if cur_len != total_len:
                 target[:] = IGNORE_INDEX
                 print(
@@ -707,10 +691,7 @@ def preprocess_eeve(
                     f" (ignored)"
                 )
 
-    return dict(
-        input_ids=input_ids,
-        labels=targets,
-    )
+    return dict(input_ids=input_ids, labels=targets)
     
 def preprocess_phi(
     sources,
